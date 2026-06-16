@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.lowderancorp.inioli.data.stockjourney.CloseStockJourneyPreview
+import com.lowderancorp.inioli.data.stockjourney.CloseStockJourneyResult
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyDetail
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyDraftStore
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyDetailItem
@@ -31,7 +32,7 @@ data class ReceiveStockDetailUiState(
     val closeNotes: String = "",
     val isClosing: Boolean = false,
     val closeErrorMessage: String? = null,
-    val closeSuccessToken: Int = 0,
+    val closeSuccessResult: CloseStockJourneyResult? = null,
     val scanAcceptedToneToken: Int = 0,
     val overscanToneToken: Int = 0,
     val mutedOverscanProductIds: Set<Int> = emptySet(),
@@ -252,6 +253,7 @@ class ReceiveStockDetailViewModel(
                 isScannerArmed = false,
                 closeNotes = "",
                 closeErrorMessage = null,
+                closeSuccessResult = null,
                 mutedOverscanProductIds = emptySet(),
                 pendingOverscanItemId = null
             )
@@ -286,18 +288,21 @@ class ReceiveStockDetailViewModel(
 
         viewModelScope.launch {
             try {
-                repository.closeStockJourney(request)
+                val closeResult = repository.closeStockJourney(request)
                 draftStore.clearDraft(stockJourneyId)
                 _uiState.update { state ->
                     state.copy(
+                        detail = state.detail?.takeIf { detail ->
+                            detail.id == closeResult.id
+                        }?.copy(status = closeResult.status) ?: state.detail,
                         scannedBarcode = null,
                         matchedItemId = null,
                         scannedQuantityByItemId = emptyMap(),
-                        isScannerArmed = true,
+                        isScannerArmed = false,
                         closeNotes = "",
                         isClosing = false,
                         closeErrorMessage = null,
-                        closeSuccessToken = state.closeSuccessToken + 1,
+                        closeSuccessResult = closeResult,
                         mutedOverscanProductIds = emptySet(),
                         pendingOverscanItemId = null
                     )
@@ -369,6 +374,18 @@ class ReceiveStockDetailViewModel(
             stockJourneyId = stockJourneyId,
             scannedQuantityByItemId = updatedScannedQuantities
         )
+    }
+
+    fun acknowledgeCloseSuccess() {
+        _uiState.update { state ->
+            state.copy(closeSuccessResult = null)
+        }
+    }
+
+    fun dismissCloseError() {
+        _uiState.update { state ->
+            state.copy(closeErrorMessage = null)
+        }
     }
 
     companion object {

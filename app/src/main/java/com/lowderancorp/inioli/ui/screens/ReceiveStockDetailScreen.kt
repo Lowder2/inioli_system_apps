@@ -86,6 +86,7 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.lowderancorp.inioli.data.stockjourney.CloseStockJourneyPreview
 import com.lowderancorp.inioli.data.stockjourney.CloseStockJourneyPreviewItem
+import com.lowderancorp.inioli.data.stockjourney.CloseStockJourneyResult
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyDetailItem
 import com.lowderancorp.inioli.data.stockjourney.toQuantityProgress
 import com.lowderancorp.inioli.ui.ReceiveStockDetailUiState
@@ -125,12 +126,6 @@ fun ReceiveStockDetailScreen(
         }
     }
 
-    LaunchedEffect(uiState.closeSuccessToken) {
-        if (uiState.closeSuccessToken > 0) {
-            onCloseSuccess()
-        }
-    }
-
     LaunchedEffect(uiState.scanAcceptedToneToken) {
         if (uiState.scanAcceptedToneToken > 0) {
             toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 120)
@@ -140,6 +135,12 @@ fun ReceiveStockDetailScreen(
     LaunchedEffect(uiState.overscanToneToken) {
         if (uiState.overscanToneToken > 0) {
             toneGenerator.startTone(ToneGenerator.TONE_PROP_NACK, 180)
+        }
+    }
+
+    LaunchedEffect(uiState.closeSuccessResult) {
+        if (uiState.closeSuccessResult != null) {
+            showSubmitDialog = false
         }
     }
 
@@ -226,7 +227,6 @@ fun ReceiveStockDetailScreen(
         CloseMovementConfirmationDialog(
             closePreview = closePreview,
             closeNotes = uiState.closeNotes,
-            closeErrorMessage = uiState.closeErrorMessage,
             isClosing = uiState.isClosing,
             onNotesChange = viewModel::onCloseNotesChange,
             onDismissRequest = {
@@ -235,6 +235,13 @@ fun ReceiveStockDetailScreen(
                 }
             },
             onConfirmClick = viewModel::closeStockJourney
+        )
+    }
+
+    uiState.closeErrorMessage?.let { closeErrorMessage ->
+        CloseMovementErrorDialog(
+            message = closeErrorMessage,
+            onDismissRequest = viewModel::dismissCloseError
         )
     }
 
@@ -258,6 +265,16 @@ fun ReceiveStockDetailScreen(
                 viewModel.confirmOverscanWarning(
                     muteForProductInSession = muteForProductInSession
                 )
+            }
+        )
+    }
+
+    uiState.closeSuccessResult?.let { closeSuccessResult ->
+        CloseMovementSuccessDialog(
+            result = closeSuccessResult,
+            onDismissRequest = {
+                viewModel.acknowledgeCloseSuccess()
+                onCloseSuccess()
             }
         )
     }
@@ -377,27 +394,9 @@ private fun SubmitBottomBar(
 }
 
 @Composable
-private fun InlineErrorMessage(
-    message: String
-) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer
-    ) {
-        Text(
-            text = message,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
-}
-
-@Composable
 private fun CloseMovementConfirmationDialog(
     closePreview: CloseStockJourneyPreview,
     closeNotes: String,
-    closeErrorMessage: String?,
     isClosing: Boolean,
     onNotesChange: (String) -> Unit,
     onDismissRequest: () -> Unit,
@@ -438,10 +437,6 @@ private fun CloseMovementConfirmationDialog(
                     placeholder = { Text("Optional close notes") }
                 )
 
-                if (!closeErrorMessage.isNullOrBlank()) {
-                    InlineErrorMessage(message = closeErrorMessage)
-                }
-
                 closePreview.items.forEach { item ->
                     CloseMovementConfirmationItem(item = item)
                 }
@@ -461,6 +456,50 @@ private fun CloseMovementConfirmationDialog(
                 enabled = !isClosing
             ) {
                 Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun CloseMovementErrorDialog(
+    message: String,
+    onDismissRequest: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = {
+            Text("Unable to submit movement")
+        },
+        text = {
+            Text(message)
+        },
+        confirmButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("OK")
+            }
+        }
+    )
+}
+
+@Composable
+private fun CloseMovementSuccessDialog(
+    result: CloseStockJourneyResult,
+    onDismissRequest: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = {
+            Text("Movement submitted")
+        },
+        text = {
+            Text(
+                text = "Movement #${result.id} was submitted successfully and is now ${result.status}."
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("OK")
             }
         }
     )

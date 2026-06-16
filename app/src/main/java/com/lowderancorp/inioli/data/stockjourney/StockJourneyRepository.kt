@@ -30,8 +30,8 @@ class StockJourneyRepository(
 
     suspend fun closeStockJourney(
         request: CloseStockJourneyRequest
-    ) {
-        remoteDataSource.closeStockJourney(
+    ): CloseStockJourneyResult {
+        return remoteDataSource.closeStockJourney(
             accessToken = requireAccessToken(),
             request = request
         )

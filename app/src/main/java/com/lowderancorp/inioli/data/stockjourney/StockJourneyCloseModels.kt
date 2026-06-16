@@ -1,6 +1,7 @@
 package com.lowderancorp.inioli.data.stockjourney
 
 import java.math.BigDecimal
+import org.json.JSONObject
 
 data class CloseStockJourneyRequest(
     val stockJourneyId: Int,
@@ -12,6 +13,36 @@ data class CloseStockJourneyRequestItem(
     val productId: Int,
     val receivedQty: BigDecimal
 )
+
+data class CloseStockJourneyResult(
+    val id: Int,
+    val status: String
+)
+
+fun closeStockJourneyResultOrThrow(
+    id: Int,
+    status: String
+): CloseStockJourneyResult {
+    val cleanStatus = status.trim()
+
+    if (id <= 0 || cleanStatus.isBlank()) {
+        throw StockJourneyException(
+            "The server returned an invalid close response. Please try again."
+        )
+    }
+
+    return CloseStockJourneyResult(
+        id = id,
+        status = cleanStatus
+    )
+}
+
+fun JSONObject.toRequiredCloseStockJourneyResult(): CloseStockJourneyResult {
+    return closeStockJourneyResultOrThrow(
+        id = optInt("id"),
+        status = optString("status")
+    )
+}
 
 data class CloseStockJourneyPreview(
     val items: List<CloseStockJourneyPreviewItem>,

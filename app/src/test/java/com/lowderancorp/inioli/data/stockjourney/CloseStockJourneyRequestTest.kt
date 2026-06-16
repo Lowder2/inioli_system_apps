@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -107,6 +108,16 @@ class CloseStockJourneyRequestTest {
         assertEquals(1, request?.items?.size)
         assertEquals(688, request?.items?.single()?.productId)
         assertBigDecimalEquals("6", request?.items?.single()?.receivedQty)
+    }
+
+    @Test
+    fun rejectsInvalidCloseResponsePayload() {
+        assertThrows(StockJourneyException::class.java) {
+            closeStockJourneyResultOrThrow(
+                id = 0,
+                status = "CLOSED"
+            )
+        }
     }
 
     private fun assertBigDecimalEquals(

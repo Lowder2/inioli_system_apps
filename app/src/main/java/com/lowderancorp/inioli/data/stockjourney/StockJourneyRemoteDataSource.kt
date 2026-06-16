@@ -11,6 +11,7 @@ import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 
 class StockJourneyRemoteDataSource {
@@ -114,7 +115,7 @@ class StockJourneyRemoteDataSource {
     suspend fun closeStockJourney(
         accessToken: String,
         request: CloseStockJourneyRequest
-    ) = withContext(Dispatchers.IO) {
+    ): CloseStockJourneyResult = withContext(Dispatchers.IO) {
         val connection = createConnection(
             accessToken = accessToken,
             pathWithQuery = "CloseStockJourney.php",
@@ -134,6 +135,14 @@ class StockJourneyRemoteDataSource {
                         responseBody = responseBody,
                         defaultMessage = "Failed to close stock movement"
                     )
+                )
+            }
+
+            try {
+                JSONObject(responseBody).toRequiredCloseStockJourneyResult()
+            } catch (exception: JSONException) {
+                throw StockJourneyException(
+                    "The server returned an invalid close response. Please try again."
                 )
             }
         } finally {
