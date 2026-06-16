@@ -43,3 +43,23 @@ fun Throwable.toStockJourneyUserMessage(
         }
     }
 }
+
+fun Throwable.toStockJourneyCloseUserMessage(): String {
+    return when (this) {
+        is SocketTimeoutException -> {
+            "The stock movement server took too long to respond while closing this movement. Please try again."
+        }
+
+        is StockJourneyException -> {
+            message ?: "Unable to close this stock movement."
+        }
+
+        is IOException -> {
+            "Unable to reach the stock movement server. Please check the connection and try again."
+        }
+
+        else -> {
+            "Something went wrong while closing this stock movement. Please try again."
+        }
+    }
+}

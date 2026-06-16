@@ -4,12 +4,14 @@ import android.content.Context
 import com.lowderancorp.inioli.data.auth.AuthLocalDataSource
 import com.lowderancorp.inioli.data.auth.AuthRemoteDataSource
 import com.lowderancorp.inioli.data.auth.AuthRepository
+import com.lowderancorp.inioli.data.stockjourney.StockJourneyDraftStore
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyRemoteDataSource
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyRepository
 
 interface AppContainer {
     val authRepository: AuthRepository
     val stockJourneyRepository: StockJourneyRepository
+    val stockJourneyDraftStore: StockJourneyDraftStore
 }
 
 class DefaultAppContainer(context: Context) : AppContainer {
@@ -17,6 +19,10 @@ class DefaultAppContainer(context: Context) : AppContainer {
     private val authLocalDataSource = AuthLocalDataSource(appContext)
     private val authRemoteDataSource = AuthRemoteDataSource()
     private val stockJourneyRemoteDataSource = StockJourneyRemoteDataSource()
+
+    override val stockJourneyDraftStore: StockJourneyDraftStore by lazy {
+        StockJourneyDraftStore()
+    }
 
     override val authRepository: AuthRepository by lazy {
         AuthRepository(

@@ -2,6 +2,7 @@ package com.lowderancorp.inioli.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -22,6 +23,7 @@ import com.lowderancorp.inioli.ui.screens.SplashScreen
 import com.lowderancorp.inioli.ui.screens.StockAdjustmentScreen
 
 private object Routes {
+    const val ReceiveStockRefreshResult = "receive_stock_refresh"
     const val Splash = "splash"
     const val Login = "login"
     const val Home = "home"
@@ -103,10 +105,25 @@ fun InioliApp(
         }
         composable(Routes.ReceiveStock) {
             LoggedInContent(sessionState = sessionState) {
+                val receiveStockViewModel: ReceiveStockViewModel = viewModel(
+                    factory = ReceiveStockViewModel.Factory
+                )
+                val receiveStockBackStackEntry = remember(navController) {
+                    navController.getBackStackEntry(Routes.ReceiveStock)
+                }
+                val refreshRequested by receiveStockBackStackEntry.savedStateHandle
+                    .getStateFlow(Routes.ReceiveStockRefreshResult, false)
+                    .collectAsStateWithLifecycle()
+
+                LaunchedEffect(refreshRequested) {
+                    if (refreshRequested) {
+                        receiveStockBackStackEntry.savedStateHandle[Routes.ReceiveStockRefreshResult] = false
+                        receiveStockViewModel.refresh()
+                    }
+                }
+
                 ReceiveStockScreen(
-                    viewModel = viewModel(
-                        factory = ReceiveStockViewModel.Factory
-                    ),
+                    viewModel = receiveStockViewModel,
                     onStockJourneyClick = { stockJourneyId ->
                         navController.navigate(Routes.receiveStockDetail(stockJourneyId))
                     },
@@ -133,7 +150,13 @@ fun InioliApp(
                                 stockJourneyId = stockJourneyId
                             )
                         ),
-                        onBackClick = { navController.popBackStack() }
+                        onBackClick = { navController.popBackStack() },
+                        onCloseSuccess = {
+                            navController.previousBackStackEntry
+                                ?.savedStateHandle
+                                ?.set(Routes.ReceiveStockRefreshResult, true)
+                            navController.popBackStack()
+                        }
                     )
                 }
             }

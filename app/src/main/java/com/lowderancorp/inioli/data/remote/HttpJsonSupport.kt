@@ -42,6 +42,14 @@ internal fun HttpURLConnection.readResponseBody(): String {
     return stream?.readAllText().orEmpty()
 }
 
+internal fun HttpURLConnection.writeJsonBody(
+    jsonBody: String
+) {
+    outputStream.bufferedWriter().use { writer ->
+        writer.write(jsonBody)
+    }
+}
+
 internal fun HttpURLConnection.errorMessage(
     responseBody: String,
     defaultMessage: String

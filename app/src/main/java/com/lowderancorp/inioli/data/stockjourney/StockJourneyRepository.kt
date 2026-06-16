@@ -28,6 +28,15 @@ class StockJourneyRepository(
         )
     }
 
+    suspend fun closeStockJourney(
+        request: CloseStockJourneyRequest
+    ) {
+        remoteDataSource.closeStockJourney(
+            accessToken = requireAccessToken(),
+            request = request
+        )
+    }
+
     private suspend fun requireAccessToken(): String {
         return authLocalDataSource.getSession()
             ?.accessToken

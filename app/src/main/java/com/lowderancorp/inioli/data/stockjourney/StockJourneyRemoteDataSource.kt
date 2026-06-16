@@ -5,6 +5,7 @@ import com.lowderancorp.inioli.data.remote.configureJsonRequest
 import com.lowderancorp.inioli.data.remote.errorMessage
 import com.lowderancorp.inioli.data.remote.openApiConnection
 import com.lowderancorp.inioli.data.remote.readResponseBody
+import com.lowderancorp.inioli.data.remote.writeJsonBody
 import java.net.HttpURLConnection
 import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
@@ -110,18 +111,73 @@ class StockJourneyRemoteDataSource {
         }
     }
 
+    suspend fun closeStockJourney(
+        accessToken: String,
+        request: CloseStockJourneyRequest
+    ) = withContext(Dispatchers.IO) {
+        val connection = createConnection(
+            accessToken = accessToken,
+            pathWithQuery = "CloseStockJourney.php",
+            method = "POST",
+            hasRequestBody = true
+        )
+
+        try {
+            connection.writeJsonBody(request.toJson().toString())
+
+            val responseCode = connection.responseCode
+            val responseBody = connection.readResponseBody()
+
+            if (responseCode !in 200..299) {
+                throw StockJourneyException(
+                    connection.errorMessage(
+                        responseBody = responseBody,
+                        defaultMessage = "Failed to close stock movement"
+                    )
+                )
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     private fun createConnection(
         accessToken: String,
-        pathWithQuery: String
+        pathWithQuery: String,
+        method: String = "GET",
+        hasRequestBody: Boolean = false
     ): HttpURLConnection {
         return openApiConnection(
             baseUrl = BuildConfig.STOCK_MOVEMENT_BASE_URL,
             pathWithQuery = pathWithQuery
         ).apply {
             configureJsonRequest(
-                method = "GET",
-                authorizationHeader = "Bearer $accessToken"
+                method = method,
+                authorizationHeader = "Bearer $accessToken",
+                hasRequestBody = hasRequestBody
             )
+        }
+    }
+
+    private fun CloseStockJourneyRequest.toJson(): JSONObject {
+        return JSONObject().apply {
+            put("stock_journey_id", stockJourneyId)
+            put(
+                "items",
+                JSONArray().apply {
+                    items.forEach { item ->
+                        put(
+                            JSONObject().apply {
+                                put("product_id", item.productId)
+                                put("received_qty", item.receivedQty)
+                            }
+                        )
+                    }
+                }
+            )
+            notes?.let { closeNotes ->
+                put("notes", closeNotes)
+            }
         }
     }
 
