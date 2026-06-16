@@ -1,11 +1,11 @@
 package com.lowderancorp.inioli.data.stockjourney
 
 import com.lowderancorp.inioli.BuildConfig
-import java.io.BufferedReader
-import java.io.InputStream
-import java.io.InputStreamReader
+import com.lowderancorp.inioli.data.remote.configureJsonRequest
+import com.lowderancorp.inioli.data.remote.errorMessage
+import com.lowderancorp.inioli.data.remote.openApiConnection
+import com.lowderancorp.inioli.data.remote.readResponseBody
 import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -24,7 +24,12 @@ class StockJourneyRemoteDataSource {
             val responseBody = connection.readResponseBody()
 
             if (responseCode !in 200..299) {
-                throw StockJourneyException(connection.errorMessage(responseBody))
+                throw StockJourneyException(
+                    connection.errorMessage(
+                        responseBody = responseBody,
+                        defaultMessage = "Failed to load stock movements"
+                    )
+                )
             }
 
             val items = JSONArray(responseBody)
@@ -56,7 +61,12 @@ class StockJourneyRemoteDataSource {
             val responseBody = connection.readResponseBody()
 
             if (responseCode !in 200..299) {
-                throw StockJourneyException(connection.errorMessage(responseBody))
+                throw StockJourneyException(
+                    connection.errorMessage(
+                        responseBody = responseBody,
+                        defaultMessage = "Failed to load stock movements"
+                    )
+                )
             }
 
             val jsonBody = JSONObject(responseBody)
@@ -86,7 +96,12 @@ class StockJourneyRemoteDataSource {
             val responseBody = connection.readResponseBody()
 
             if (responseCode !in 200..299) {
-                throw StockJourneyException(connection.errorMessage(responseBody))
+                throw StockJourneyException(
+                    connection.errorMessage(
+                        responseBody = responseBody,
+                        defaultMessage = "Failed to load stock movements"
+                    )
+                )
             }
 
             JSONObject(responseBody).toStockJourneyDetail()
@@ -99,17 +114,14 @@ class StockJourneyRemoteDataSource {
         accessToken: String,
         pathWithQuery: String
     ): HttpURLConnection {
-        val endpoint = URL(
-            "${BuildConfig.STOCK_MOVEMENT_BASE_URL.trimEnd('/')}/$pathWithQuery"
-        )
-        return (endpoint.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 15_000
-            readTimeout = 15_000
-            doInput = true
-            useCaches = false
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("Authorization", "Bearer $accessToken")
+        return openApiConnection(
+            baseUrl = BuildConfig.STOCK_MOVEMENT_BASE_URL,
+            pathWithQuery = pathWithQuery
+        ).apply {
+            configureJsonRequest(
+                method = "GET",
+                authorizationHeader = "Bearer $accessToken"
+            )
         }
     }
 
@@ -185,28 +197,5 @@ class StockJourneyRemoteDataSource {
     private fun JSONObject.optNullableString(key: String): String? {
         if (isNull(key)) return null
         return optString(key).takeIf { it.isNotBlank() }
-    }
-
-    private fun HttpURLConnection.readResponseBody(): String {
-        val stream = if (responseCode in 200..299) inputStream else errorStream
-        return stream?.readAllText().orEmpty()
-    }
-
-    private fun InputStream.readAllText(): String {
-        return BufferedReader(InputStreamReader(this)).use { reader ->
-            reader.readText()
-        }
-    }
-
-    private fun HttpURLConnection.errorMessage(responseBody: String): String {
-        if (responseBody.isBlank()) {
-            return "Failed to load stock movements with HTTP $responseCode."
-        }
-
-        return runCatching {
-            JSONObject(responseBody).optString("message")
-        }.getOrNull().orEmpty().ifBlank {
-            "Failed to load stock movements with HTTP $responseCode."
-        }
     }
 }

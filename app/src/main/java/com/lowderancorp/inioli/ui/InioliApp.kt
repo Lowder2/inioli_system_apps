@@ -11,6 +11,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.navigation.compose.rememberNavController
+import com.lowderancorp.inioli.data.auth.UserSession
 import com.lowderancorp.inioli.ui.screens.HomeScreen
 import com.lowderancorp.inioli.ui.screens.LoginScreen
 import com.lowderancorp.inioli.ui.screens.ReceiveStockDetailScreen
@@ -32,6 +33,19 @@ private object Routes {
 
     fun receiveStockDetail(stockJourneyId: Int): String {
         return "receive_stock/$stockJourneyId"
+    }
+}
+
+@Composable
+private fun LoggedInContent(
+    sessionState: SessionState,
+    content: @Composable (UserSession) -> Unit
+) {
+    val loggedInState = sessionState as? SessionState.LoggedIn
+    if (loggedInState == null) {
+        SplashScreen()
+    } else {
+        content(loggedInState.session)
     }
 }
 
@@ -76,12 +90,9 @@ fun InioliApp(
             )
         }
         composable(Routes.Home) {
-            val loggedInState = sessionState as? SessionState.LoggedIn
-            if (loggedInState == null) {
-                SplashScreen()
-            } else {
+            LoggedInContent(sessionState = sessionState) { session ->
                 HomeScreen(
-                    username = loggedInState.session.username,
+                    username = session.username,
                     onLogoutClick = appViewModel::logout,
                     onReceiveStockClick = { navController.navigate(Routes.ReceiveStock) },
                     onSaleClick = { navController.navigate(Routes.Sale) },
@@ -91,13 +102,10 @@ fun InioliApp(
             }
         }
         composable(Routes.ReceiveStock) {
-            val loggedInState = sessionState as? SessionState.LoggedIn
-            if (loggedInState == null) {
-                SplashScreen()
-            } else {
+            LoggedInContent(sessionState = sessionState) {
                 ReceiveStockScreen(
                     viewModel = viewModel(
-                        factory = ReceiveStockViewModel.Factory(loggedInState.session.accessToken)
+                        factory = ReceiveStockViewModel.Factory
                     ),
                     onStockJourneyClick = { stockJourneyId ->
                         navController.navigate(Routes.receiveStockDetail(stockJourneyId))
@@ -114,20 +122,20 @@ fun InioliApp(
                 }
             )
         ) { backStackEntry ->
-            val loggedInState = sessionState as? SessionState.LoggedIn
             val stockJourneyId = backStackEntry.arguments?.getInt("stockJourneyId")
-            if (loggedInState == null || stockJourneyId == null) {
+            if (stockJourneyId == null) {
                 SplashScreen()
             } else {
-                ReceiveStockDetailScreen(
-                    viewModel = viewModel(
-                        factory = ReceiveStockDetailViewModel.Factory(
-                            accessToken = loggedInState.session.accessToken,
-                            stockJourneyId = stockJourneyId
-                        )
-                    ),
-                    onBackClick = { navController.popBackStack() }
-                )
+                LoggedInContent(sessionState = sessionState) {
+                    ReceiveStockDetailScreen(
+                        viewModel = viewModel(
+                            factory = ReceiveStockDetailViewModel.Factory(
+                                stockJourneyId = stockJourneyId
+                            )
+                        ),
+                        onBackClick = { navController.popBackStack() }
+                    )
+                }
             }
         }
         composable(Routes.Sale) {

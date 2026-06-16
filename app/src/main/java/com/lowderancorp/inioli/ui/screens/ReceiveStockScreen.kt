@@ -1,25 +1,22 @@
 package com.lowderancorp.inioli.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -33,22 +30,27 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lowderancorp.inioli.data.stockjourney.MovementType
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyItem
+import com.lowderancorp.inioli.data.stockjourney.formatQuantityOrDefault
 import com.lowderancorp.inioli.ui.ReceiveStockUiState
 import com.lowderancorp.inioli.ui.ReceiveStockViewModel
+import com.lowderancorp.inioli.ui.components.CenteredLoadingState
+import com.lowderancorp.inioli.ui.components.CenteredMessageState
+import com.lowderancorp.inioli.ui.components.LoadingPanel
+import com.lowderancorp.inioli.ui.components.RetryErrorBanner
+import com.lowderancorp.inioli.ui.components.ScreenTopAppBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,16 +63,9 @@ fun ReceiveStockScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Receive Stock") },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                },
+            ScreenTopAppBar(
+                title = "Receive Stock",
+                onBackClick = onBackClick,
                 actions = {
                     IconButton(
                         onClick = viewModel::refresh,
@@ -96,7 +91,8 @@ fun ReceiveStockScreen(
 
             when {
                 uiState.isLoading && uiState.movementTypes.isEmpty() -> {
-                    LoadingState(
+                    CenteredLoadingState(
+                        message = "Loading stock movements...",
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(24.dp)
@@ -104,7 +100,7 @@ fun ReceiveStockScreen(
                 }
 
                 !uiState.errorMessage.isNullOrBlank() && uiState.movementTypes.isEmpty() -> {
-                    MessageState(
+                    CenteredMessageState(
                         title = "Unable to load movement types",
                         message = uiState.errorMessage,
                         actionLabel = "Try Again",
@@ -175,13 +171,15 @@ private fun ReceiveStockList(
         when {
             uiState.isLoading && uiState.items.isEmpty() -> {
                 item {
-                    LoadingPanel()
+                    LoadingPanel(
+                        message = "Loading stock movements for the selected type..."
+                    )
                 }
             }
 
             !errorMessage.isNullOrBlank() && uiState.items.isEmpty() -> {
                 item {
-                    MessageBanner(
+                    RetryErrorBanner(
                         message = errorMessage,
                         onRetryClick = onRetryClick
                     )
@@ -200,7 +198,7 @@ private fun ReceiveStockList(
 
         if (!errorMessage.isNullOrBlank() && uiState.items.isNotEmpty()) {
             item {
-                MessageBanner(
+                RetryErrorBanner(
                     message = errorMessage,
                     onRetryClick = onRetryClick
                 )
@@ -354,10 +352,10 @@ private fun StockJourneyCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SummaryChip(label = "Qty ${item.totalQty}")
+                SummaryChip(label = "Qty ${item.totalQty.formatQuantityOrDefault()}")
                 SummaryChip(label = "${item.itemCount} item${if (item.itemCount == 1) "" else "s"}")
                 item.totalReceivedQty?.let { receivedQty ->
-                    SummaryChip(label = "Received $receivedQty")
+                    SummaryChip(label = "Received ${receivedQty.formatQuantityOrDefault()}")
                 }
             }
         }
@@ -391,78 +389,6 @@ private fun SummaryChip(label: String) {
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             style = MaterialTheme.typography.labelMedium
         )
-    }
-}
-
-@Composable
-private fun MessageBanner(
-    message: String,
-    onRetryClick: () -> Unit
-) {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Button(onClick = onRetryClick) {
-                Text("Retry")
-            }
-        }
-    }
-}
-
-@Composable
-private fun LoadingState(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            CircularProgressIndicator()
-            Text(
-                text = "Loading stock movements...",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun LoadingPanel() {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                CircularProgressIndicator()
-                Text(
-                    text = "Loading stock movements for the selected type...",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
     }
 }
 
@@ -505,38 +431,4 @@ private fun buildMovementSummary(
     val movementLabel = selectedMovementType?.code ?: "the selected type"
     val movementWord = if (itemCount == 1) "movement" else "movements"
     return "$itemCount $movementWord loaded for $movementLabel."
-}
-
-@Composable
-private fun MessageState(
-    title: String,
-    message: String?,
-    actionLabel: String,
-    onActionClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall
-            )
-            if (!message.isNullOrBlank()) {
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Button(onClick = onActionClick) {
-                Text(actionLabel)
-            }
-        }
-    }
 }

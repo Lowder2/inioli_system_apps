@@ -27,6 +27,7 @@ class DefaultAppContainer(context: Context) : AppContainer {
 
     override val stockJourneyRepository: StockJourneyRepository by lazy {
         StockJourneyRepository(
+            authLocalDataSource = authLocalDataSource,
             remoteDataSource = stockJourneyRemoteDataSource
         )
     }

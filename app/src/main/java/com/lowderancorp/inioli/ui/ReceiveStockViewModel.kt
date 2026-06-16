@@ -2,18 +2,14 @@ package com.lowderancorp.inioli.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.lowderancorp.inioli.InioliApplication
+import com.lowderancorp.inioli.data.stockjourney.DEFAULT_RECEIVE_STOCK_MOVEMENT_TYPE
 import com.lowderancorp.inioli.data.stockjourney.MovementType
-import com.lowderancorp.inioli.data.stockjourney.StockJourneyException
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyItem
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyRepository
-import java.io.IOException
-import java.net.SocketTimeoutException
+import com.lowderancorp.inioli.data.stockjourney.resolveMovementTypeCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,11 +17,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-private const val RECEIVE_STOCK_MOVEMENT_TYPE = "WAREHOUSE_TO_STORE"
-
 data class ReceiveStockUiState(
     val movementTypes: List<MovementType> = emptyList(),
-    val selectedMovementTypeCode: String = RECEIVE_STOCK_MOVEMENT_TYPE,
+    val selectedMovementTypeCode: String = DEFAULT_RECEIVE_STOCK_MOVEMENT_TYPE,
     val items: List<StockJourneyItem> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null
@@ -37,8 +31,7 @@ data class ReceiveStockUiState(
 }
 
 class ReceiveStockViewModel(
-    private val repository: StockJourneyRepository,
-    private val accessToken: String
+    private val repository: StockJourneyRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ReceiveStockUiState())
     val uiState: StateFlow<ReceiveStockUiState> = _uiState.asStateFlow()
@@ -87,7 +80,7 @@ class ReceiveStockViewModel(
         viewModelScope.launch {
             try {
                 val movementTypes = if (reloadMovementTypes || _uiState.value.movementTypes.isEmpty()) {
-                    repository.getMovementTypes(accessToken = accessToken)
+                    repository.getMovementTypes()
                 } else {
                     _uiState.value.movementTypes
                 }
@@ -98,7 +91,6 @@ class ReceiveStockViewModel(
                 )
 
                 val items = repository.getStockJourneyByMovementType(
-                    accessToken = accessToken,
                     movementTypeCode = resolvedMovementTypeCode
                 )
                 _uiState.update { state ->
@@ -115,56 +107,22 @@ class ReceiveStockViewModel(
                 _uiState.update { state ->
                     state.copy(
                         isLoading = false,
-                        errorMessage = exception.toUserMessage()
+                        errorMessage = exception.toStockJourneyUserMessage(
+                            targetLabel = "stock movements"
+                        )
                     )
                 }
             }
         }
     }
 
-    private fun resolveMovementTypeCode(
-        requestedMovementTypeCode: String,
-        movementTypes: List<MovementType>
-    ): String {
-        return when {
-            movementTypes.any { it.code == requestedMovementTypeCode } -> requestedMovementTypeCode
-            movementTypes.any { it.code == RECEIVE_STOCK_MOVEMENT_TYPE } -> RECEIVE_STOCK_MOVEMENT_TYPE
-            else -> movementTypes.firstOrNull()?.code ?: requestedMovementTypeCode
-        }
-    }
-
-    private fun Throwable.toUserMessage(): String {
-        return when (this) {
-            is SocketTimeoutException -> {
-                "The stock movement server took too long to respond. Please try again."
-            }
-
-            is StockJourneyException -> {
-                message ?: "Unable to load stock movements."
-            }
-
-            is IOException -> {
-                "Unable to reach the stock movement server. When testing on the Android emulator, use 10.0.2.2 instead of localhost."
-            }
-
-            else -> {
-                "Something went wrong while loading stock movements. Please try again."
-            }
-        }
-    }
-
     companion object {
-        fun Factory(accessToken: String): ViewModelProvider.Factory = viewModelFactory {
+        val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 ReceiveStockViewModel(
-                    repository = inioliApplication().container.stockJourneyRepository,
-                    accessToken = accessToken
+                    repository = inioliApplication().container.stockJourneyRepository
                 )
             }
         }
     }
-}
-
-private fun CreationExtras.inioliApplication(): InioliApplication {
-    return this[APPLICATION_KEY] as InioliApplication
 }

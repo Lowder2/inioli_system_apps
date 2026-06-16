@@ -2,17 +2,11 @@ package com.lowderancorp.inioli.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.lowderancorp.inioli.InioliApplication
-import com.lowderancorp.inioli.data.auth.AuthException
 import com.lowderancorp.inioli.data.auth.AuthRepository
 import com.lowderancorp.inioli.data.auth.UserSession
-import java.io.IOException
-import java.net.SocketTimeoutException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -104,7 +98,7 @@ class AppViewModel(
                         _loginUiState.update {
                             it.copy(
                                 isLoading = false,
-                                errorMessage = exception.toUserMessage()
+                                errorMessage = exception.toAuthUserMessage()
                             )
                         }
                     }
@@ -132,23 +126,6 @@ class AppViewModel(
         }
     }
 
-    private fun Throwable.toUserMessage(): String {
-        return when (this) {
-            is SocketTimeoutException -> {
-                "The server took too long to respond. Please try again."
-            }
-
-            is AuthException -> message ?: "Login failed. Please check your credentials."
-            is IOException -> {
-                "Unable to reach the login server. When testing on the Android emulator, use 10.0.2.2 instead of localhost."
-            }
-
-            else -> {
-                "Something went wrong while signing in. Please try again."
-            }
-        }
-    }
-
     companion object {
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
@@ -158,8 +135,4 @@ class AppViewModel(
             }
         }
     }
-}
-
-private fun CreationExtras.inioliApplication(): InioliApplication {
-    return this[APPLICATION_KEY] as InioliApplication
 }

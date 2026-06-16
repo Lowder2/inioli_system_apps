@@ -1,11 +1,11 @@
 package com.lowderancorp.inioli.data.auth
 
 import com.lowderancorp.inioli.BuildConfig
-import java.io.BufferedReader
-import java.io.InputStream
-import java.io.InputStreamReader
+import com.lowderancorp.inioli.data.remote.configureJsonRequest
+import com.lowderancorp.inioli.data.remote.errorMessage
+import com.lowderancorp.inioli.data.remote.openApiConnection
+import com.lowderancorp.inioli.data.remote.readResponseBody
 import java.net.HttpURLConnection
-import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -27,7 +27,12 @@ class AuthRemoteDataSource {
             val responseBody = connection.readResponseBody()
 
             if (responseCode !in 200..299) {
-                throw AuthException(connection.errorMessage(responseBody))
+                throw AuthException(
+                    connection.errorMessage(
+                        responseBody = responseBody,
+                        defaultMessage = "Login failed"
+                    )
+                )
             }
 
             val jsonBody = JSONObject(responseBody)
@@ -48,40 +53,17 @@ class AuthRemoteDataSource {
     }
 
     private fun createConnection(): HttpURLConnection {
-        val endpoint = URL("${BuildConfig.LOGIN_BASE_URL.trimEnd('/')}/Login.php")
-        return (endpoint.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 15_000
-            readTimeout = 15_000
-            doInput = true
-            doOutput = true
-            useCaches = false
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("Authorization", BuildConfig.LOGIN_AUTHORIZATION_HEADER)
-        }
-    }
-
-    private fun HttpURLConnection.readResponseBody(): String {
-        val stream = if (responseCode in 200..299) inputStream else errorStream
-        return stream?.readAllText().orEmpty()
-    }
-
-    private fun InputStream.readAllText(): String {
-        return BufferedReader(InputStreamReader(this)).use { reader ->
-            reader.readText()
-        }
-    }
-
-    private fun HttpURLConnection.errorMessage(responseBody: String): String {
-        if (responseBody.isBlank()) {
-            return "Login failed with HTTP $responseCode."
-        }
-
-        return runCatching {
-            JSONObject(responseBody).optString("message")
-        }.getOrNull().orEmpty().ifBlank {
-            "Login failed with HTTP $responseCode."
+        return openApiConnection(
+            baseUrl = BuildConfig.LOGIN_BASE_URL,
+            pathWithQuery = "Login.php"
+        ).apply {
+            configureJsonRequest(
+                method = "POST",
+                authorizationHeader = BuildConfig.LOGIN_BEARER_TOKEN
+                    .takeIf { token -> token.isNotBlank() }
+                    ?.let { token -> "Bearer $token" },
+                hasRequestBody = true
+            )
         }
     }
 }

@@ -2,18 +2,12 @@ package com.lowderancorp.inioli.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.lowderancorp.inioli.InioliApplication
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyDetail
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyDetailItem
-import com.lowderancorp.inioli.data.stockjourney.StockJourneyException
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyRepository
-import java.io.IOException
-import java.net.SocketTimeoutException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,7 +33,6 @@ data class ReceiveStockDetailUiState(
 
 class ReceiveStockDetailViewModel(
     private val repository: StockJourneyRepository,
-    private val accessToken: String,
     private val stockJourneyId: Int
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ReceiveStockDetailUiState())
@@ -62,7 +55,6 @@ class ReceiveStockDetailViewModel(
         viewModelScope.launch {
             try {
                 val detail = repository.getStockJourneyDetail(
-                    accessToken = accessToken,
                     stockJourneyId = stockJourneyId
                 )
                 _uiState.update { state ->
@@ -81,7 +73,9 @@ class ReceiveStockDetailViewModel(
                 _uiState.update { state ->
                     state.copy(
                         isLoading = false,
-                        errorMessage = exception.toUserMessage()
+                        errorMessage = exception.toStockJourneyUserMessage(
+                            targetLabel = "stock movement detail"
+                        )
                     )
                 }
             }
@@ -138,42 +132,16 @@ class ReceiveStockDetailViewModel(
         return this + (itemId to ((this[itemId] ?: 0) + 1))
     }
 
-    private fun Throwable.toUserMessage(): String {
-        return when (this) {
-            is SocketTimeoutException -> {
-                "The stock movement server took too long to respond. Please try again."
-            }
-
-            is StockJourneyException -> {
-                message ?: "Unable to load stock movement detail."
-            }
-
-            is IOException -> {
-                "Unable to reach the stock movement server. Please check the connection and try again."
-            }
-
-            else -> {
-                "Something went wrong while loading stock movement detail. Please try again."
-            }
-        }
-    }
-
     companion object {
         fun Factory(
-            accessToken: String,
             stockJourneyId: Int
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 ReceiveStockDetailViewModel(
                     repository = inioliApplication().container.stockJourneyRepository,
-                    accessToken = accessToken,
                     stockJourneyId = stockJourneyId
                 )
             }
         }
     }
-}
-
-private fun CreationExtras.inioliApplication(): InioliApplication {
-    return this[APPLICATION_KEY] as InioliApplication
 }

@@ -25,12 +25,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,7 +37,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -57,16 +54,18 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.barcode.BarcodeScanner
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.common.InputImage
-import com.lowderancorp.inioli.data.stockjourney.StockJourneyDetail
 import com.lowderancorp.inioli.data.stockjourney.StockJourneyDetailItem
+import com.lowderancorp.inioli.data.stockjourney.toQuantityProgress
 import com.lowderancorp.inioli.ui.ReceiveStockDetailUiState
 import com.lowderancorp.inioli.ui.ReceiveStockDetailViewModel
-import java.math.BigDecimal
-import java.math.RoundingMode
+import com.lowderancorp.inioli.ui.components.CenteredLoadingState
+import com.lowderancorp.inioli.ui.components.CenteredMessageState
+import com.lowderancorp.inioli.ui.components.RetryErrorBanner
+import com.lowderancorp.inioli.ui.components.ScreenTopAppBar
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -86,16 +85,9 @@ fun ReceiveStockDetailScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                },
+            ScreenTopAppBar(
+                title = title,
+                onBackClick = onBackClick,
                 actions = {
                     IconButton(
                         onClick = viewModel::refresh,
@@ -121,7 +113,7 @@ fun ReceiveStockDetailScreen(
 
             when {
                 uiState.isLoading && uiState.detail == null -> {
-                    LoadingState(
+                    CenteredLoadingState(
                         message = "Loading stock movement detail...",
                         modifier = Modifier
                             .fillMaxSize()
@@ -130,7 +122,7 @@ fun ReceiveStockDetailScreen(
                 }
 
                 !uiState.errorMessage.isNullOrBlank() && uiState.detail == null -> {
-                    MessageState(
+                    CenteredMessageState(
                         title = "Unable to load movement detail",
                         message = uiState.errorMessage,
                         actionLabel = "Try Again",
@@ -184,7 +176,7 @@ private fun ReceiveStockDetailContent(
 
         if (!errorMessage.isNullOrBlank()) {
             item {
-                MessageBanner(
+                RetryErrorBanner(
                     message = errorMessage,
                     onRetryClick = onRetryClick
                 )
@@ -320,8 +312,8 @@ private fun BarcodeScannerPreview(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val currentOnBarcodeScanned by rememberUpdatedState(onBarcodeScanned)
-    val currentOnBarcodeCleared by rememberUpdatedState(onBarcodeCleared)
+    val currentOnBarcodeScanned = rememberUpdatedState(onBarcodeScanned)
+    val currentOnBarcodeCleared = rememberUpdatedState(onBarcodeCleared)
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val barcodeScanner = remember {
         BarcodeScanning.getClient(
@@ -329,6 +321,11 @@ private fun BarcodeScannerPreview(
                 .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
                 .build()
         )
+    }
+    val previewView = remember(context) {
+        PreviewView(context).apply {
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+        }
     }
 
     DisposableEffect(Unit) {
@@ -338,56 +335,66 @@ private fun BarcodeScannerPreview(
         }
     }
 
-    AndroidView(
-        modifier = modifier,
-        factory = { viewContext ->
-            PreviewView(viewContext).apply {
-                scaleType = PreviewView.ScaleType.FILL_CENTER
-            }
-        },
-        update = { previewView ->
-            val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+    DisposableEffect(lifecycleOwner, previewView) {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        val mainExecutor = ContextCompat.getMainExecutor(context)
+
+        cameraProviderFuture.addListener(
+            {
+                val cameraProvider = cameraProviderFuture.get()
+                val preview = Preview.Builder()
+                    .build()
+                    .also { cameraPreview ->
+                        cameraPreview.setSurfaceProvider(previewView.surfaceProvider)
+                    }
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                    .also { analysis ->
+                        analysis.setAnalyzer(
+                            cameraExecutor,
+                            StockBarcodeAnalyzer(
+                                barcodeScanner = barcodeScanner,
+                                onBarcodeScanned = { barcode ->
+                                    currentOnBarcodeScanned.value(barcode)
+                                },
+                                onBarcodeCleared = {
+                                    currentOnBarcodeCleared.value()
+                                }
+                            )
+                        )
+                    }
+
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        preview,
+                        imageAnalysis
+                    )
+                } catch (exception: Exception) {
+                    Log.e(BARCODE_SCANNER_TAG, "Unable to bind barcode scanner camera.", exception)
+                }
+            },
+            mainExecutor
+        )
+
+        onDispose {
             cameraProviderFuture.addListener(
                 {
-                    val cameraProvider = cameraProviderFuture.get()
-                    val preview = Preview.Builder()
-                        .build()
-                        .also { cameraPreview ->
-                            cameraPreview.setSurfaceProvider(previewView.surfaceProvider)
-                        }
-                    val imageAnalysis = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-                        .also { analysis ->
-                            analysis.setAnalyzer(
-                                cameraExecutor,
-                                StockBarcodeAnalyzer(
-                                    barcodeScanner = barcodeScanner,
-                                    onBarcodeScanned = { barcode ->
-                                        currentOnBarcodeScanned(barcode)
-                                    },
-                                    onBarcodeCleared = {
-                                        currentOnBarcodeCleared()
-                                    }
-                                )
-                            )
-                        }
-
-                    try {
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(
-                            lifecycleOwner,
-                            CameraSelector.DEFAULT_BACK_CAMERA,
-                            preview,
-                            imageAnalysis
-                        )
-                    } catch (exception: Exception) {
-                        Log.e(BARCODE_SCANNER_TAG, "Unable to bind barcode scanner camera.", exception)
+                    runCatching {
+                        cameraProviderFuture.get().unbindAll()
                     }
                 },
-                ContextCompat.getMainExecutor(context)
+                mainExecutor
             )
         }
+    }
+
+    AndroidView(
+        modifier = modifier,
+        factory = { previewView }
     )
 }
 
@@ -457,9 +464,8 @@ private fun DetailItemCard(
             )
 
             QuantityProgressPanel(
-                requiredQty = item.qty,
-                scannedQuantity = scannedQuantity,
-                receivedQty = item.receivedQty
+                item = item,
+                scannedQuantity = scannedQuantity
             )
         }
     }
@@ -467,15 +473,10 @@ private fun DetailItemCard(
 
 @Composable
 private fun QuantityProgressPanel(
-    requiredQty: String,
-    scannedQuantity: Int,
-    receivedQty: String?
+    item: StockJourneyDetailItem,
+    scannedQuantity: Int
 ) {
-    val required = requiredQty.toBigDecimalOrNull()
-    val scanned = scannedQuantity.toBigDecimal()
-    val remaining = required?.subtract(scanned)
-    val remainingDisplay = remaining?.coerceAtLeastZero()?.formatQuantity() ?: "-"
-    val overScanned = remaining != null && remaining < BigDecimal.ZERO
+    val progress = item.toQuantityProgress(scannedQuantity = scannedQuantity)
 
     Surface(
         shape = RoundedCornerShape(8.dp),
@@ -492,30 +493,25 @@ private fun QuantityProgressPanel(
             ) {
                 QuantityValue(
                     label = "Need",
-                    value = required?.formatQuantity() ?: requiredQty,
+                    value = progress.requiredDisplay,
                     modifier = Modifier.weight(1f)
                 )
                 QuantityValue(
                     label = "Scanned",
-                    value = scannedQuantity.toString(),
+                    value = progress.scannedDisplay,
                     modifier = Modifier.weight(1f)
                 )
                 QuantityValue(
                     label = "Remaining",
-                    value = remainingDisplay,
+                    value = progress.remainingDisplay,
                     modifier = Modifier.weight(1f)
                 )
             }
 
-            val receivedText = receivedQty ?: "0.000"
             Text(
-                text = if (overScanned) {
-                    "Over scanned by ${remaining?.abs()?.formatQuantity()} | Received $receivedText"
-                } else {
-                    "Received $receivedText"
-                },
+                text = progress.statusMessage,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (overScanned) {
+                color = if (progress.isOverScanned) {
                     MaterialTheme.colorScheme.error
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -545,98 +541,6 @@ private fun QuantityValue(
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold
         )
-    }
-}
-
-private fun BigDecimal.coerceAtLeastZero(): BigDecimal {
-    return if (this < BigDecimal.ZERO) BigDecimal.ZERO else this
-}
-
-private fun BigDecimal.formatQuantity(): String {
-    return setScale(3, RoundingMode.HALF_UP)
-        .stripTrailingZeros()
-        .toPlainString()
-}
-
-@Composable
-private fun MessageBanner(
-    message: String,
-    onRetryClick: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Button(onClick = onRetryClick) {
-                Text("Retry")
-            }
-        }
-    }
-}
-
-@Composable
-private fun LoadingState(
-    message: String,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            CircularProgressIndicator()
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun MessageState(
-    title: String,
-    message: String?,
-    actionLabel: String,
-    onActionClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall
-            )
-            if (!message.isNullOrBlank()) {
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Button(onClick = onActionClick) {
-                Text(actionLabel)
-            }
-        }
     }
 }
 

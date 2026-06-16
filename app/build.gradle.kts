@@ -41,8 +41,8 @@ android {
         )
         buildConfigField(
             "String",
-            "LOGIN_AUTHORIZATION_HEADER",
-            "\"Bearer ${propertyOrDefault("INIOLI_LOGIN_BEARER_TOKEN", "416cdab68e21320efe462bf9b8d6a4ca1219af79e29b8d0ed1b6cc259d2398da")}\""
+            "LOGIN_BEARER_TOKEN",
+            "\"${propertyOrDefault("INIOLI_LOGIN_BEARER_TOKEN", "")}\""
         )
         buildConfigField(
             "String",

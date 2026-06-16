@@ -1,29 +1,37 @@
 package com.lowderancorp.inioli.data.stockjourney
 
+import com.lowderancorp.inioli.data.auth.AuthLocalDataSource
+
 class StockJourneyRepository(
+    private val authLocalDataSource: AuthLocalDataSource,
     private val remoteDataSource: StockJourneyRemoteDataSource
 ) {
-    suspend fun getMovementTypes(accessToken: String): List<MovementType> {
-        return remoteDataSource.getMovementTypes(accessToken = accessToken)
+    suspend fun getMovementTypes(): List<MovementType> {
+        return remoteDataSource.getMovementTypes(accessToken = requireAccessToken())
     }
 
     suspend fun getStockJourneyByMovementType(
-        accessToken: String,
         movementTypeCode: String
     ): List<StockJourneyItem> {
         return remoteDataSource.getStockJourneyByMovementType(
-            accessToken = accessToken,
+            accessToken = requireAccessToken(),
             movementTypeCode = movementTypeCode
         )
     }
 
     suspend fun getStockJourneyDetail(
-        accessToken: String,
         stockJourneyId: Int
     ): StockJourneyDetail {
         return remoteDataSource.getStockJourneyDetail(
-            accessToken = accessToken,
+            accessToken = requireAccessToken(),
             stockJourneyId = stockJourneyId
         )
+    }
+
+    private suspend fun requireAccessToken(): String {
+        return authLocalDataSource.getSession()
+            ?.accessToken
+            ?.takeIf { token -> token.isNotBlank() }
+            ?: throw StockJourneyException("Your session has expired. Please sign in again.")
     }
 }
