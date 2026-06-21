@@ -1,18 +1,21 @@
 package com.lowderancorp.inioli.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -33,6 +36,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,6 +56,15 @@ import com.lowderancorp.inioli.ui.components.CenteredMessageState
 import com.lowderancorp.inioli.ui.components.LoadingPanel
 import com.lowderancorp.inioli.ui.components.RetryErrorBanner
 import com.lowderancorp.inioli.ui.components.ScreenTopAppBar
+import kotlinx.coroutines.launch
+
+private val HiddenMovementTypeCodes = setOf(
+    "ADMIN_ADJUSTMENT",
+    "RETURN_OFFLINE",
+    "RETURN_ONLINE",
+    "SALE_OFFLINE",
+    "SALE_ONLINE"
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -133,51 +147,73 @@ private fun ReceiveStockList(
     onRetryClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val selectedMovementType = uiState.selectedMovementType
-
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+    val visibleMovementTypes = remember(uiState.movementTypes) {
+        uiState.movementTypes.filterNot { movementType ->
+            movementType.code in HiddenMovementTypeCodes
+        }
+    }
+    val selectedMovementType = remember(
+        visibleMovementTypes,
+        uiState.selectedMovementTypeCode
     ) {
-        item {
-            Text(
-                text = "Movement Type",
-                style = MaterialTheme.typography.headlineSmall
-            )
+        visibleMovementTypes.firstOrNull { movementType ->
+            movementType.code == uiState.selectedMovementTypeCode
         }
-
-        item {
-            MovementTypeSelector(
-                movementTypes = uiState.movementTypes,
-                selectedMovementTypeCode = uiState.selectedMovementTypeCode,
-                isLoading = uiState.isLoading,
-                onMovementTypeSelected = onMovementTypeSelected
-            )
+    }
+    val visibleItems = remember(uiState.items) {
+        uiState.items.filterNot { item ->
+            item.status.equals("CLOSED", ignoreCase = true)
         }
+    }
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
-        item {
-            Text(
-                text = buildMovementSummary(
-                    selectedMovementType = selectedMovementType,
-                    itemCount = uiState.items.size
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                MovementTypeSelector(
+                    movementTypes = visibleMovementTypes,
+                    selectedMovementTypeCode = uiState.selectedMovementTypeCode,
+                    isLoading = uiState.isLoading,
+                    onMovementTypeSelected = onMovementTypeSelected
+                )
+            }
 
-        val errorMessage = uiState.errorMessage
-        when {
-            uiState.isLoading && uiState.items.isEmpty() -> {
-                item {
-                    LoadingPanel(
-                        message = "Loading stock movements for the selected type..."
-                    )
+            val errorMessage = uiState.errorMessage
+            when {
+                uiState.isLoading && visibleItems.isEmpty() -> {
+                    item {
+                        LoadingPanel(
+                            message = "Loading stock movements for the selected type..."
+                        )
+                    }
+                }
+
+                !errorMessage.isNullOrBlank() && visibleItems.isEmpty() -> {
+                    item {
+                        RetryErrorBanner(
+                            message = errorMessage,
+                            onRetryClick = onRetryClick
+                        )
+                    }
+                }
+
+                visibleItems.isEmpty() -> {
+                    item {
+                        EmptyMovementPanel(
+                            movementType = selectedMovementType,
+                            onRefreshClick = onRetryClick
+                        )
+                    }
                 }
             }
 
-            !errorMessage.isNullOrBlank() && uiState.items.isEmpty() -> {
+            if (!errorMessage.isNullOrBlank() && visibleItems.isNotEmpty()) {
                 item {
                     RetryErrorBanner(
                         message = errorMessage,
@@ -186,40 +222,41 @@ private fun ReceiveStockList(
                 }
             }
 
-            uiState.items.isEmpty() -> {
-                item {
-                    EmptyMovementPanel(
-                        movementType = selectedMovementType,
-                        onRefreshClick = onRetryClick
+            if (visibleItems.isNotEmpty()) {
+                items(
+                    items = visibleItems,
+                    key = { item -> item.id }
+                ) { item ->
+                    StockJourneyCard(
+                        item = item,
+                        onClick = { onStockJourneyClick(item.id) }
                     )
                 }
             }
         }
 
-        if (!errorMessage.isNullOrBlank() && uiState.items.isNotEmpty()) {
-            item {
-                RetryErrorBanner(
-                    message = errorMessage,
-                    onRetryClick = onRetryClick
-                )
-            }
-        }
-
-        if (uiState.items.isNotEmpty()) {
-            items(
-                items = uiState.items,
-                key = { item -> item.id }
-            ) { item ->
-                StockJourneyCard(
-                    item = item,
-                    onClick = { onStockJourneyClick(item.id) }
-                )
-            }
+        if (visibleItems.isNotEmpty()) {
+            ScrollJumpButtons(
+                onScrollToTop = {
+                    coroutineScope.launch {
+                        listState.animateScrollToItem(0)
+                    }
+                },
+                onScrollToBottom = {
+                    coroutineScope.launch {
+                        val lastIndex = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                        listState.animateScrollToItem(lastIndex)
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .offset(x = (-12).dp)
+            )
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MovementTypeSelector(
     movementTypes: List<MovementType>,
@@ -285,7 +322,6 @@ private fun MovementTypeSelector(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StockJourneyCard(
     item: StockJourneyItem,
@@ -298,21 +334,21 @@ private fun StockJourneyCard(
         )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
                         text = "Movement #${item.id}",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
@@ -322,58 +358,26 @@ private fun StockJourneyCard(
                     )
                 }
 
-                StatusBadge(status = item.status)
+                SummaryChip(label = "Qty ${item.totalQty.formatQuantityOrDefault()}")
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "${item.sourceLocationCode} -> ${item.destinationLocationCode}",
-                    style = MaterialTheme.typography.titleSmall
-                )
-                Text(
-                    text = "${item.sourceLocationName} to ${item.destinationLocationName}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                text = "${item.sourceLocationCode} -> ${item.destinationLocationCode}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
+            )
 
             val notes = item.notes
             if (!notes.isNullOrBlank()) {
                 Text(
                     text = notes,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 3,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SummaryChip(label = "Qty ${item.totalQty.formatQuantityOrDefault()}")
-                SummaryChip(label = "${item.itemCount} item${if (item.itemCount == 1) "" else "s"}")
-                item.totalReceivedQty?.let { receivedQty ->
-                    SummaryChip(label = "Received ${receivedQty.formatQuantityOrDefault()}")
-                }
-            }
         }
-    }
-}
-
-@Composable
-private fun StatusBadge(status: String) {
-    Surface(
-        shape = RoundedCornerShape(999.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-    ) {
-        Text(
-            text = status,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.labelLarge
-        )
     }
 }
 
@@ -386,9 +390,49 @@ private fun SummaryChip(label: String) {
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
             style = MaterialTheme.typography.labelMedium
         )
+    }
+}
+
+@Composable
+private fun ScrollJumpButtons(
+    onScrollToTop: () -> Unit,
+    onScrollToBottom: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(999.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 4.dp,
+            shadowElevation = 4.dp
+        ) {
+            IconButton(onClick = onScrollToTop) {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowUp,
+                    contentDescription = "Scroll to top"
+                )
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(999.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 4.dp,
+            shadowElevation = 4.dp
+        ) {
+            IconButton(onClick = onScrollToBottom) {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = "Scroll to bottom"
+                )
+            }
+        }
     }
 }
 
@@ -422,13 +466,4 @@ private fun EmptyMovementPanel(
             }
         }
     }
-}
-
-private fun buildMovementSummary(
-    selectedMovementType: MovementType?,
-    itemCount: Int
-): String {
-    val movementLabel = selectedMovementType?.code ?: "the selected type"
-    val movementWord = if (itemCount == 1) "movement" else "movements"
-    return "$itemCount $movementWord loaded for $movementLabel."
 }

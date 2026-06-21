@@ -31,11 +31,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FlashOff
@@ -67,7 +67,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -95,13 +94,13 @@ import com.lowderancorp.inioli.ui.components.CenteredLoadingState
 import com.lowderancorp.inioli.ui.components.CenteredMessageState
 import com.lowderancorp.inioli.ui.components.RetryErrorBanner
 import com.lowderancorp.inioli.ui.components.ScreenTopAppBar
+import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val BARCODE_SCANNER_TAG = "ReceiveStockScanner"
 private const val BARCODE_CLEAR_DEBOUNCE_MS = 450L
-private val ScannerViewportShape = RoundedCornerShape(18.dp)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -290,6 +289,42 @@ private fun ReceiveStockDetailContent(
 ) {
     val detail = uiState.detail ?: return
     val errorMessage = uiState.errorMessage
+    val listState = rememberLazyListState()
+    var invalidScannedBarcode by remember { mutableStateOf<String?>(null) }
+    var invalidFeedbackToken by remember { mutableStateOf(0) }
+
+    LaunchedEffect(uiState.matchedItemId, uiState.scannedQuantityByItemId, errorMessage) {
+        val matchedItemId = uiState.matchedItemId ?: return@LaunchedEffect
+        if (matchedItemId !in uiState.scannedQuantityByItemId) return@LaunchedEffect
+
+        val matchedItemIndex = detail.items.indexOfFirst { item ->
+            item.id == matchedItemId
+        }
+        if (matchedItemIndex < 0) return@LaunchedEffect
+
+        val headerItemCount = 1 + if (!errorMessage.isNullOrBlank()) 1 else 0
+        listState.animateScrollToItem(index = headerItemCount + matchedItemIndex)
+    }
+
+    LaunchedEffect(uiState.isScannerArmed, uiState.scannedBarcode, uiState.matchedItemId) {
+        val scannedBarcode = uiState.scannedBarcode
+        val shouldShowInvalidFeedback = !uiState.isScannerArmed &&
+            uiState.matchedItemId == null &&
+            !scannedBarcode.isNullOrBlank()
+
+        if (shouldShowInvalidFeedback) {
+            invalidScannedBarcode = scannedBarcode
+            invalidFeedbackToken += 1
+        } else if (uiState.matchedItemId != null) {
+            invalidScannedBarcode = null
+        }
+    }
+
+    LaunchedEffect(invalidFeedbackToken) {
+        if (invalidFeedbackToken == 0) return@LaunchedEffect
+        delay(1600)
+        invalidScannedBarcode = null
+    }
 
     Column(modifier = modifier) {
         BarcodeScannerCard(
@@ -300,7 +335,17 @@ private fun ReceiveStockDetailContent(
                 .height(300.dp)
         )
 
+        invalidScannedBarcode?.let { barcode ->
+            InvalidScanFeedbackBar(
+                barcode = barcode,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+        }
+
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
@@ -334,6 +379,34 @@ private fun ReceiveStockDetailContent(
                     scannedQuantity = uiState.scannedQuantityByItemId[item.id] ?: 0
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun InvalidScanFeedbackBar(
+    barcode: String,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = "Barcode not found",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "$barcode is not part of this movement.",
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }
@@ -1027,17 +1100,19 @@ private fun DetailItemCard(
         )
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(
                 text = item.barcode ?: item.productCode,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
                 text = item.productName,
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
 
             QuantityProgressPanel(
@@ -1055,44 +1130,30 @@ private fun QuantityProgressPanel(
 ) {
     val progress = item.toQuantityProgress(scannedQuantity = scannedQuantity)
 
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        contentColor = MaterialTheme.colorScheme.onSurface
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                QuantityValue(
-                    label = "Need",
-                    value = progress.requiredDisplay,
-                    modifier = Modifier.weight(1f)
-                )
-                QuantityValue(
-                    label = "Scanned",
-                    value = progress.scannedDisplay,
-                    modifier = Modifier.weight(1f)
-                )
-                QuantityValue(
-                    label = "Remaining",
-                    value = progress.remainingDisplay,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            QuantityValue(
+                label = "Quantity",
+                value = progress.requiredDisplay,
+                modifier = Modifier.weight(1f)
+            )
+            QuantityValue(
+                label = "Scanned",
+                value = progress.scannedDisplay,
+                modifier = Modifier.weight(1f)
+            )
+        }
 
+        progress.overScannedDisplay?.let { overScannedDisplay ->
             Text(
-                text = progress.statusMessage,
+                text = "Over scanned by $overScannedDisplay",
                 style = MaterialTheme.typography.bodySmall,
-                color = if (progress.isOverScanned) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
+                color = MaterialTheme.colorScheme.error
             )
         }
     }
@@ -1115,7 +1176,7 @@ private fun QuantityValue(
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.titleLarge,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
     }
